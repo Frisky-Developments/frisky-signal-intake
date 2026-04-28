@@ -10,7 +10,7 @@ export function generateTicketId(): string {
  * Generates a unique ticket ID by checking against a Set of existing IDs.
  * Using a Set ensures O(1) lookup time for uniqueness checks.
  */
-export async function generateUniqueTicketId(existingIds: Set<string>): Promise<string> {
+export function generateUniqueTicketId(existingIds: Set<string>): string {
   let attempts = 0
   let ticketId = generateTicketId()
   
