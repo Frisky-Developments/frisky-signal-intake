@@ -65,9 +65,11 @@ export function IntakePage() {
     setIsSubmitting(true)
 
     try {
-      // Create a Set for O(1) lookup performance when checking for ticket ID uniqueness
-      const existingIdSet = new Set(signals?.map(s => s.ticketId) ?? [])
-      const ticketId = await generateUniqueTicketId(existingIdSet)
+      // ⚡ BOLT OPTIMIZATION: Use manual loop to populate Set and avoid intermediate array allocation from .map()
+      const existingIdSet = new Set<string>()
+      signals?.forEach(s => existingIdSet.add(s.ticketId))
+
+      const ticketId = generateUniqueTicketId(existingIdSet)
       const now = Date.now()
 
       const newSignal: Signal = {
@@ -91,8 +93,11 @@ export function IntakePage() {
 
       setSignals((current) => [newSignal, ...(current ?? [])])
       
-      await sendDiscordWebhook(newSignal, webhookUrl)
-      await sendTelegramWebhook(newSignal, telegramBotToken, telegramChatId)
+      // ⚡ BOLT OPTIMIZATION: Parallelize webhook notifications to minimize user-perceived latency
+      await Promise.all([
+        sendDiscordWebhook(newSignal, webhookUrl),
+        sendTelegramWebhook(newSignal, telegramBotToken, telegramChatId)
+      ])
 
       navigate(`/submitted/${ticketId}`)
     } catch (error) {

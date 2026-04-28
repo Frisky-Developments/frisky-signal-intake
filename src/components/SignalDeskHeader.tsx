@@ -69,9 +69,14 @@ export const SignalDeskHeader = memo(function SignalDeskHeader({
                 ◇ FRISKY DEVELOPMENTS
               </div>
               <div className="flex items-center gap-2.5">
+                {/* ⚡ BOLT OPTIMIZATION: Prioritize brand logo as LCP element and reserve space to prevent Layout Shift */}
                 <img
                   src={wolfLogo}
                   alt="Frisky"
+                  width={48}
+                  height={48}
+                  loading="eager"
+                  fetchPriority="high"
                   className="
                     w-11 h-11 md:w-12 md:h-12
                     opacity-95
