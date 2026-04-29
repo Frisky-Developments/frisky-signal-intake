@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,10 +19,21 @@ export function StatusPage() {
   const [searchedSignal, setSearchedSignal] = useState<Signal | null>(null)
   const [notFound, setNotFound] = useState(false)
 
+  /**
+   * ⚡ BOLT OPTIMIZATION: Transition ticket lookup from O(N) to O(1).
+   * By pre-indexing signals into a Map during data updates, search lookups
+   * become instantaneous regardless of the queue size.
+   */
+  const signalMap = useMemo(() => {
+    const map = new Map<string, Signal>();
+    signals?.forEach(s => map.set(s.ticketId.toUpperCase(), s));
+    return map;
+  }, [signals]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     
-    const signal = signals?.find(s => s.ticketId.toUpperCase() === ticketId.toUpperCase())
+    const signal = signalMap.get(ticketId.toUpperCase())
     
     if (signal) {
       setSearchedSignal(signal)
