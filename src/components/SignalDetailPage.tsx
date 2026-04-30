@@ -22,9 +22,21 @@ export function SignalDetailPage() {
   const [noteContent, setNoteContent] = useState("")
   const [newStatus, setNewStatus] = useState<SignalStatus | "">("")
 
+  /**
+   * ⚡ BOLT OPTIMIZATION: Map Indexing Pattern
+   * Index signals by ID for O(1) lookup performance.
+   * Prevents O(N) linear scans when navigating between signal details.
+   */
+  const signalsById = useMemo(() => {
+    const map = new Map<string, Signal>()
+    signals?.forEach(s => map.set(s.id, s))
+    return map
+  }, [signals])
+
   const signal = useMemo(() => {
-    return signals?.find(s => s.id === signalId)
-  }, [signals, signalId])
+    if (!signalId) return null
+    return signalsById.get(signalId) || null
+  }, [signalsById, signalId])
 
   if (!signal) {
     return (
