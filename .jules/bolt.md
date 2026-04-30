@@ -17,3 +17,7 @@
 ## 2026-04-23 - [Referential Stability Cache Pattern]
 **Learning:** `useMemo` is often used for array indexing/transformation, but recreating derived objects in the loop breaks `React.memo` in downstream list components. If the parent array is recreated (common with state updates), every child re-renders even if its individual source data hasn't changed.
 **Action:** Implemented a manual referential stability cache using `useRef` inside `useMemo`. By comparing raw source references, we can preserve exact derived object identities for unchanged items, enabling effective list-wide memoization even when the parent state is updated.
+
+## 2026-04-30 - [Map Indexing Pattern]
+**Learning:** For single-item lookups (e.g., finding a specific ticket by ID), indexing the source array into a memoized `Map` within `useMemo` converts O(N) `.find()` operations into O(1) lookups. Additionally, transitioning from manual search state (`searchedSignal`) to derived state based on the search term and the Map ensures data consistency, as the UI automatically reflects updates to the underlying KV data without manual synchronization.
+**Action:** Use the Map Indexing Pattern for high-frequency or data-critical lookups to ensure both performance scalability and referential/data integrity.

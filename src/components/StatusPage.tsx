@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,21 +16,35 @@ export function StatusPage() {
   const navigate = useNavigate()
   const [signals] = useKV<Signal[]>("signals", [])
   const [ticketId, setTicketId] = useState("")
-  const [searchedSignal, setSearchedSignal] = useState<Signal | null>(null)
-  const [notFound, setNotFound] = useState(false)
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null)
+
+  /**
+   * ⚡ BOLT OPTIMIZATION: Map Indexing Pattern
+   * Index signals by uppercase Ticket ID for O(1) lookup performance.
+   * This prevents O(N) linear scans on every search submission.
+   */
+  const signalsByTicketId = useMemo(() => {
+    const map = new Map<string, Signal>()
+    signals?.forEach(s => map.set(s.ticketId.toUpperCase(), s))
+    return map
+  }, [signals])
+
+  /**
+   * ⚡ BOLT OPTIMIZATION: Derived State Pattern
+   * Deriving the searched signal directly from the indexed Map and activeTicketId
+   * ensures the UI always reflects the latest data from KV storage (e.g. status updates)
+   * without needing manual state synchronization.
+   */
+  const searchedSignal = useMemo(() => {
+    if (!activeTicketId) return null
+    return signalsByTicketId.get(activeTicketId.toUpperCase()) || null
+  }, [signalsByTicketId, activeTicketId])
+
+  const notFound = activeTicketId !== null && !searchedSignal
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    
-    const signal = signals?.find(s => s.ticketId.toUpperCase() === ticketId.toUpperCase())
-    
-    if (signal) {
-      setSearchedSignal(signal)
-      setNotFound(false)
-    } else {
-      setSearchedSignal(null)
-      setNotFound(true)
-    }
+    setActiveTicketId(ticketId)
   }
 
   /**
