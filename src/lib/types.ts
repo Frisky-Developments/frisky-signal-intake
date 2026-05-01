@@ -34,6 +34,7 @@ export interface InternalNote {
   id: string
   content: string
   timestamp: number
+  formattedDate?: string
 }
 
 export interface StatusHistoryEntry {

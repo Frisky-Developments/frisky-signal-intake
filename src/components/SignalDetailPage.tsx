@@ -14,6 +14,11 @@ import { longDateFormatter } from "@/lib/utils"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 
+type DetailedSignal = Signal & {
+  formattedCreatedAt: string;
+  formattedUpdatedAt: string;
+};
+
 export function SignalDetailPage() {
   const { signalId } = useParams()
   const navigate = useNavigate()
@@ -33,9 +38,22 @@ export function SignalDetailPage() {
     return map
   }, [signals])
 
-  const signal = useMemo(() => {
+  const signal = useMemo<DetailedSignal | null>(() => {
     if (!signalId) return null
-    return signalsById.get(signalId) || null
+    const s = signalsById.get(signalId)
+    if (!s) return null
+
+    // ⚡ BOLT OPTIMIZATION: Pre-format dates in useMemo to prevent redundant
+    // Intl.DateTimeFormat calls during re-renders (e.g. when typing a note).
+    return {
+      ...s,
+      formattedCreatedAt: longDateFormatter.format(s.createdAt),
+      formattedUpdatedAt: longDateFormatter.format(s.updatedAt),
+      notes: s.notes.map(n => ({
+        ...n,
+        formattedDate: longDateFormatter.format(n.timestamp)
+      }))
+    }
   }, [signalsById, signalId])
 
   if (!signal) {
@@ -100,22 +118,25 @@ export function SignalDetailPage() {
     toast.success("Status updated")
   }
 
-  const formatTimestamp = (timestamp: number) => {
-    return longDateFormatter.format(timestamp)
-  }
-
   const systemLog = useMemo(() => {
     const entries = [
-      { type: "SYSTEM", message: "Signal received", timestamp: signal.createdAt },
+      {
+        type: "SYSTEM",
+        message: "Signal received",
+        timestamp: signal.createdAt,
+        formattedDate: signal.formattedCreatedAt
+      },
       ...signal.statusHistory.map(h => ({
         type: "SYSTEM",
         message: `Status changed to ${h.status.replace(/_/g, " ")}`,
-        timestamp: h.timestamp
+        timestamp: h.timestamp,
+        formattedDate: longDateFormatter.format(h.timestamp)
       })),
       ...signal.notes.map(n => ({
         type: "OPERATOR",
         message: `Note added`,
-        timestamp: n.timestamp
+        timestamp: n.timestamp,
+        formattedDate: n.formattedDate
       }))
     ].sort((a, b) => a.timestamp - b.timestamp)
 
@@ -174,11 +195,11 @@ export function SignalDetailPage() {
                   )}
                   <div>
                     <p className="text-muted-foreground mb-1">Created</p>
-                    <p className="font-medium">{formatTimestamp(signal.createdAt)}</p>
+                    <p className="font-medium">{signal.formattedCreatedAt}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground mb-1">Last Updated</p>
-                    <p className="font-medium">{formatTimestamp(signal.updatedAt)}</p>
+                    <p className="font-medium">{signal.formattedUpdatedAt}</p>
                   </div>
                 </div>
 
@@ -207,7 +228,7 @@ export function SignalDetailPage() {
                       <div key={note.id} className="bg-secondary/30 rounded p-4">
                         <p className="text-sm mb-2">{note.content}</p>
                         <p className="text-xs text-muted-foreground">
-                          {formatTimestamp(note.timestamp)}
+                          {note.formattedDate}
                         </p>
                       </div>
                     ))}
@@ -273,7 +294,7 @@ export function SignalDetailPage() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground/70 mt-1 ml-[72px]">
-                        {formatTimestamp(entry.timestamp)}
+                        {entry.formattedDate}
                       </p>
                     </div>
                   ))}

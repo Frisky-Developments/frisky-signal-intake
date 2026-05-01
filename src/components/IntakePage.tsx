@@ -93,11 +93,12 @@ export function IntakePage() {
 
       setSignals((current) => [newSignal, ...(current ?? [])])
       
-      // ⚡ BOLT OPTIMIZATION: Parallelize webhook notifications to minimize user-perceived latency
-      await Promise.all([
+      // ⚡ BOLT OPTIMIZATION: Background webhook notifications to minimize user-perceived latency.
+      // Combined with 'keepalive: true' in fetch, this allows navigation to proceed immediately.
+      Promise.all([
         sendDiscordWebhook(newSignal, webhookUrl),
         sendTelegramWebhook(newSignal, telegramBotToken, telegramChatId)
-      ])
+      ]).catch(err => console.error("Background webhook error:", err))
 
       navigate(`/submitted/${ticketId}`)
     } catch (error) {
