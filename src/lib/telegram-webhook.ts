@@ -42,7 +42,8 @@ _Frisky Signal Intake System_
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      keepalive: true
     })
 
     if (!response.ok) {

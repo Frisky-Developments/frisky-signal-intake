@@ -93,8 +93,9 @@ export function IntakePage() {
 
       setSignals((current) => [newSignal, ...(current ?? [])])
       
-      // ⚡ BOLT OPTIMIZATION: Parallelize webhook notifications to minimize user-perceived latency
-      await Promise.all([
+      // ⚡ BOLT OPTIMIZATION: Use Background Webhook Pattern to eliminate navigation lag.
+      // Removed await and using keepalive:true in fetch to fire-and-forget notifications.
+      Promise.all([
         sendDiscordWebhook(newSignal, webhookUrl),
         sendTelegramWebhook(newSignal, telegramBotToken, telegramChatId)
       ])

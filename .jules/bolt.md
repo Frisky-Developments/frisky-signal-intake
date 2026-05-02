@@ -21,3 +21,7 @@
 ## 2026-04-30 - [Map Indexing Pattern]
 **Learning:** For single-item lookups (e.g., finding a specific ticket by ID), indexing the source array into a memoized `Map` within `useMemo` converts O(N) `.find()` operations into O(1) lookups. Additionally, transitioning from manual search state (`searchedSignal`) to derived state based on the search term and the Map ensures data consistency, as the UI automatically reflects updates to the underlying KV data without manual synchronization.
 **Action:** Use the Map Indexing Pattern for high-frequency or data-critical lookups to ensure both performance scalability and referential/data integrity.
+
+## 2026-05-07 - [Background Webhook Pattern]
+**Learning:** External notifications (Discord/Telegram) were blocking navigation to the success page. Removing `await` from these calls eliminates perceived latency, but standard fetch calls can be cancelled on unmount/navigation.
+**Action:** Implemented the Background Webhook Pattern by using `keepalive: true` in `fetch` and removing the `await` in `IntakePage`. This ensures reliable delivery while providing instantaneous navigation.
