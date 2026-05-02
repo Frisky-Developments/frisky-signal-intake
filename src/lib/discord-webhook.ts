@@ -45,7 +45,8 @@ export async function sendDiscordWebhook(signal: Signal, webhookUrl?: string): P
       },
       body: JSON.stringify({
         embeds: [embed]
-      })
+      }),
+      keepalive: true
     })
 
     if (!response.ok) {
