@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback, memo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,12 +14,49 @@ import { longDateFormatter } from "@/lib/utils"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 
+/**
+ * ⚡ BOLT OPTIMIZATION: Component Isolation Pattern
+ * Isolating high-frequency state into a memoized component prevents the
+ * entire page and its expensive derived state (like formatted logs) from
+ * re-rendering on every keystroke.
+ */
+const NoteAction = memo(function NoteAction({
+  onAddNote
+}: {
+  onAddNote: (content: string) => void
+}) {
+  const [noteContent, setNoteContent] = useState("")
+
+  const handleSubmit = () => {
+    if (!noteContent.trim()) {
+      toast.error("Note cannot be empty")
+      return
+    }
+    onAddNote(noteContent)
+    setNoteContent("")
+  }
+
+  return (
+    <div className="space-y-2">
+      <Textarea
+        value={noteContent}
+        onChange={(e) => setNoteContent(e.target.value)}
+        placeholder="Add internal note..."
+        rows={3}
+      />
+      <Button onClick={handleSubmit} className="w-full">
+        <Note className="mr-2" />
+        Add Note
+      </Button>
+    </div>
+  )
+})
+
 export function SignalDetailPage() {
   const { signalId } = useParams()
   const navigate = useNavigate()
   const [signals, setSignals] = useKV<Signal[]>("signals", [])
   
-  const [noteContent, setNoteContent] = useState("")
   const [newStatus, setNewStatus] = useState<SignalStatus | "">("")
 
   /**
@@ -38,28 +75,45 @@ export function SignalDetailPage() {
     return signalsById.get(signalId) || null
   }, [signalsById, signalId])
 
-  if (!signal) {
-    return (
-      <div className="min-h-screen bg-background p-8 flex items-center justify-center">
-        <GlassPanel>
-          <p className="text-muted-foreground">Signal not found</p>
-          <Button onClick={() => navigate("/console")} className="mt-4">
-            Return to Console
-          </Button>
-        </GlassPanel>
-      </div>
-    )
-  }
+  /**
+   * ⚡ BOLT OPTIMIZATION: Render Loop Date Optimization
+   * Pre-calculating formatted date strings within useMemo prevents
+   * redundant and expensive Intl.DateTimeFormat calls during re-renders,
+   * especially critical when operators are typing in nearby fields.
+   */
+  const formattedData = useMemo(() => {
+    if (!signal) return null
 
-  const handleAddNote = () => {
-    if (!noteContent.trim()) {
-      toast.error("Note cannot be empty")
-      return
+    return {
+      createdAt: longDateFormatter.format(signal.createdAt),
+      updatedAt: longDateFormatter.format(signal.updatedAt),
+      notes: signal.notes.map(n => ({
+        ...n,
+        formattedTimestamp: longDateFormatter.format(n.timestamp)
+      })),
+      systemLog: [
+        { type: "SYSTEM", message: "Signal received", timestamp: signal.createdAt },
+        ...signal.statusHistory.map(h => ({
+          type: "SYSTEM",
+          message: `Status changed to ${h.status.replace(/_/g, " ")}`,
+          timestamp: h.timestamp
+        })),
+        ...signal.notes.map(n => ({
+          type: "OPERATOR",
+          message: `Note added`,
+          timestamp: n.timestamp
+        }))
+      ].sort((a, b) => a.timestamp - b.timestamp).map(entry => ({
+        ...entry,
+        formattedTimestamp: longDateFormatter.format(entry.timestamp)
+      }))
     }
+  }, [signal])
 
+  const handleAddNote = useCallback((content: string) => {
     const newNote: InternalNote = {
       id: `note-${Date.now()}`,
-      content: noteContent,
+      content,
       timestamp: Date.now()
     }
 
@@ -71,11 +125,10 @@ export function SignalDetailPage() {
       ) ?? []
     )
 
-    setNoteContent("")
     toast.success("Note added")
-  }
+  }, [signalId, setSignals])
 
-  const handleStatusChange = () => {
+  const handleStatusChange = useCallback(() => {
     if (!newStatus) {
       toast.error("Please select a status")
       return
@@ -98,29 +151,20 @@ export function SignalDetailPage() {
 
     setNewStatus("")
     toast.success("Status updated")
+  }, [newStatus, signalId, setSignals])
+
+  if (!signal || !formattedData) {
+    return (
+      <div className="min-h-screen bg-background p-8 flex items-center justify-center">
+        <GlassPanel>
+          <p className="text-muted-foreground">Signal not found</p>
+          <Button onClick={() => navigate("/console")} className="mt-4">
+            Return to Console
+          </Button>
+        </GlassPanel>
+      </div>
+    )
   }
-
-  const formatTimestamp = (timestamp: number) => {
-    return longDateFormatter.format(timestamp)
-  }
-
-  const systemLog = useMemo(() => {
-    const entries = [
-      { type: "SYSTEM", message: "Signal received", timestamp: signal.createdAt },
-      ...signal.statusHistory.map(h => ({
-        type: "SYSTEM",
-        message: `Status changed to ${h.status.replace(/_/g, " ")}`,
-        timestamp: h.timestamp
-      })),
-      ...signal.notes.map(n => ({
-        type: "OPERATOR",
-        message: `Note added`,
-        timestamp: n.timestamp
-      }))
-    ].sort((a, b) => a.timestamp - b.timestamp)
-
-    return entries
-  }, [signal])
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -174,11 +218,11 @@ export function SignalDetailPage() {
                   )}
                   <div>
                     <p className="text-muted-foreground mb-1">Created</p>
-                    <p className="font-medium">{formatTimestamp(signal.createdAt)}</p>
+                    <p className="font-medium">{formattedData.createdAt}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground mb-1">Last Updated</p>
-                    <p className="font-medium">{formatTimestamp(signal.updatedAt)}</p>
+                    <p className="font-medium">{formattedData.updatedAt}</p>
                   </div>
                 </div>
 
@@ -197,17 +241,17 @@ export function SignalDetailPage() {
               <h2 className="text-lg font-medium mb-4">Internal Notes</h2>
               
               <div className="space-y-4 mb-6">
-                {signal.notes.length === 0 ? (
+                {formattedData.notes.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     No notes yet
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {signal.notes.map(note => (
+                    {formattedData.notes.map(note => (
                       <div key={note.id} className="bg-secondary/30 rounded p-4">
                         <p className="text-sm mb-2">{note.content}</p>
                         <p className="text-xs text-muted-foreground">
-                          {formatTimestamp(note.timestamp)}
+                          {note.formattedTimestamp}
                         </p>
                       </div>
                     ))}
@@ -215,18 +259,7 @@ export function SignalDetailPage() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Textarea
-                  value={noteContent}
-                  onChange={(e) => setNoteContent(e.target.value)}
-                  placeholder="Add internal note..."
-                  rows={3}
-                />
-                <Button onClick={handleAddNote} className="w-full">
-                  <Note className="mr-2" />
-                  Add Note
-                </Button>
-              </div>
+              <NoteAction onAddNote={handleAddNote} />
             </GlassPanel>
           </div>
 
@@ -262,7 +295,7 @@ export function SignalDetailPage() {
               
               <ScrollArea className="h-[400px] pr-4">
                 <div className="space-y-3">
-                  {systemLog.map((entry, index) => (
+                  {formattedData.systemLog.map((entry, index) => (
                     <div key={index} className="text-sm">
                       <div className="flex items-start gap-2">
                         <span className="text-xs font-medium text-accent uppercase tracking-wider flex-shrink-0">
@@ -273,7 +306,7 @@ export function SignalDetailPage() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground/70 mt-1 ml-[72px]">
-                        {formatTimestamp(entry.timestamp)}
+                        {entry.formattedTimestamp}
                       </p>
                     </div>
                   ))}
