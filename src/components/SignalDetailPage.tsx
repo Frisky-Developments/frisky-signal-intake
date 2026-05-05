@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback, memo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,12 +14,49 @@ import { longDateFormatter } from "@/lib/utils"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 
+/**
+ * ⚡ BOLT OPTIMIZATION: Component Isolation Pattern
+ * Isolating the high-frequency `noteContent` state into a memoized sub-component
+ * prevents the entire SignalDetailPage (and its expensive derived systemLog)
+ * from re-rendering on every keystroke.
+ */
+const NoteAction = memo(function NoteAction({
+  onAddNote
+}: {
+  onAddNote: (content: string) => void
+}) {
+  const [noteContent, setNoteContent] = useState("")
+
+  const handleSubmit = () => {
+    if (!noteContent.trim()) {
+      toast.error("Note cannot be empty")
+      return
+    }
+    onAddNote(noteContent)
+    setNoteContent("")
+  }
+
+  return (
+    <div className="space-y-2">
+      <Textarea
+        value={noteContent}
+        onChange={(e) => setNoteContent(e.target.value)}
+        placeholder="Add internal note..."
+        rows={3}
+      />
+      <Button onClick={handleSubmit} className="w-full">
+        <Note className="mr-2" />
+        Add Note
+      </Button>
+    </div>
+  )
+})
+
 export function SignalDetailPage() {
   const { signalId } = useParams()
   const navigate = useNavigate()
   const [signals, setSignals] = useKV<Signal[]>("signals", [])
   
-  const [noteContent, setNoteContent] = useState("")
   const [newStatus, setNewStatus] = useState<SignalStatus | "">("")
 
   /**
@@ -51,15 +88,10 @@ export function SignalDetailPage() {
     )
   }
 
-  const handleAddNote = () => {
-    if (!noteContent.trim()) {
-      toast.error("Note cannot be empty")
-      return
-    }
-
+  const handleAddNote = useCallback((content: string) => {
     const newNote: InternalNote = {
       id: `note-${Date.now()}`,
-      content: noteContent,
+      content,
       timestamp: Date.now()
     }
 
@@ -71,9 +103,8 @@ export function SignalDetailPage() {
       ) ?? []
     )
 
-    setNoteContent("")
     toast.success("Note added")
-  }
+  }, [setSignals, signalId])
 
   const handleStatusChange = () => {
     if (!newStatus) {
@@ -215,18 +246,7 @@ export function SignalDetailPage() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Textarea
-                  value={noteContent}
-                  onChange={(e) => setNoteContent(e.target.value)}
-                  placeholder="Add internal note..."
-                  rows={3}
-                />
-                <Button onClick={handleAddNote} className="w-full">
-                  <Note className="mr-2" />
-                  Add Note
-                </Button>
-              </div>
+              <NoteAction onAddNote={handleAddNote} />
             </GlassPanel>
           </div>
 
