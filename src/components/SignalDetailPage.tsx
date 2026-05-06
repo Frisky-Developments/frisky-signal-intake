@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, memo, useCallback } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,12 +14,49 @@ import { longDateFormatter } from "@/lib/utils"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 
+/**
+ * ⚡ BOLT OPTIMIZATION: Component Isolation Pattern
+ * Isolating the high-frequency noteContent state prevents the entire
+ * SignalDetailPage and its expensive derived state (like system logs)
+ * from re-rendering on every keystroke.
+ */
+const NoteAction = memo(function NoteAction({
+  onAddNote
+}: {
+  onAddNote: (content: string) => void
+}) {
+  const [noteContent, setNoteContent] = useState("")
+
+  const handleAdd = () => {
+    if (!noteContent.trim()) {
+      toast.error("Note cannot be empty")
+      return
+    }
+    onAddNote(noteContent)
+    setNoteContent("")
+  }
+
+  return (
+    <div className="space-y-2">
+      <Textarea
+        value={noteContent}
+        onChange={(e) => setNoteContent(e.target.value)}
+        placeholder="Add internal note..."
+        rows={3}
+      />
+      <Button onClick={handleAdd} className="w-full">
+        <Note className="mr-2" />
+        Add Note
+      </Button>
+    </div>
+  )
+})
+
 export function SignalDetailPage() {
   const { signalId } = useParams()
   const navigate = useNavigate()
   const [signals, setSignals] = useKV<Signal[]>("signals", [])
   
-  const [noteContent, setNoteContent] = useState("")
   const [newStatus, setNewStatus] = useState<SignalStatus | "">("")
 
   /**
@@ -33,33 +70,32 @@ export function SignalDetailPage() {
     return map
   }, [signals])
 
-  const signal = useMemo(() => {
+  /**
+   * ⚡ BOLT OPTIMIZATION: Render Loop Date Optimization
+   * Pre-calculating formatted dates in useMemo prevents redundant and
+   * expensive Intl.DateTimeFormat calls on every render, especially
+   * important during operator input.
+   */
+  const enhancedSignal = useMemo(() => {
     if (!signalId) return null
-    return signalsById.get(signalId) || null
+    const s = signalsById.get(signalId)
+    if (!s) return null
+
+    return {
+      ...s,
+      formattedCreatedAt: longDateFormatter.format(s.createdAt),
+      formattedUpdatedAt: longDateFormatter.format(s.updatedAt),
+      notes: s.notes.map(n => ({
+        ...n,
+        formattedTimestamp: longDateFormatter.format(n.timestamp)
+      }))
+    }
   }, [signalsById, signalId])
 
-  if (!signal) {
-    return (
-      <div className="min-h-screen bg-background p-8 flex items-center justify-center">
-        <GlassPanel>
-          <p className="text-muted-foreground">Signal not found</p>
-          <Button onClick={() => navigate("/console")} className="mt-4">
-            Return to Console
-          </Button>
-        </GlassPanel>
-      </div>
-    )
-  }
-
-  const handleAddNote = () => {
-    if (!noteContent.trim()) {
-      toast.error("Note cannot be empty")
-      return
-    }
-
+  const handleAddNote = useCallback((content: string) => {
     const newNote: InternalNote = {
       id: `note-${Date.now()}`,
-      content: noteContent,
+      content,
       timestamp: Date.now()
     }
 
@@ -71,9 +107,8 @@ export function SignalDetailPage() {
       ) ?? []
     )
 
-    setNoteContent("")
     toast.success("Note added")
-  }
+  }, [signalId, setSignals])
 
   const handleStatusChange = () => {
     if (!newStatus) {
@@ -100,27 +135,39 @@ export function SignalDetailPage() {
     toast.success("Status updated")
   }
 
-  const formatTimestamp = (timestamp: number) => {
-    return longDateFormatter.format(timestamp)
-  }
-
   const systemLog = useMemo(() => {
+    if (!enhancedSignal) return []
     const entries = [
-      { type: "SYSTEM", message: "Signal received", timestamp: signal.createdAt },
-      ...signal.statusHistory.map(h => ({
+      { type: "SYSTEM", message: "Signal received", timestamp: enhancedSignal.createdAt, formattedTimestamp: enhancedSignal.formattedCreatedAt },
+      ...enhancedSignal.statusHistory.map(h => ({
         type: "SYSTEM",
         message: `Status changed to ${h.status.replace(/_/g, " ")}`,
-        timestamp: h.timestamp
+        timestamp: h.timestamp,
+        formattedTimestamp: longDateFormatter.format(h.timestamp)
       })),
-      ...signal.notes.map(n => ({
+      ...enhancedSignal.notes.map(n => ({
         type: "OPERATOR",
         message: `Note added`,
-        timestamp: n.timestamp
+        timestamp: n.timestamp,
+        formattedTimestamp: n.formattedTimestamp
       }))
     ].sort((a, b) => a.timestamp - b.timestamp)
 
     return entries
-  }, [signal])
+  }, [enhancedSignal])
+
+  if (!enhancedSignal) {
+    return (
+      <div className="min-h-screen bg-background p-8 flex items-center justify-center">
+        <GlassPanel>
+          <p className="text-muted-foreground">Signal not found</p>
+          <Button onClick={() => navigate("/console")} className="mt-4">
+            Return to Console
+          </Button>
+        </GlassPanel>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -146,13 +193,13 @@ export function SignalDetailPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <h1 className="text-2xl font-semibold mb-1">
-                      {signal.ticketId}
+                      {enhancedSignal.ticketId}
                     </h1>
                     <p className="text-sm text-muted-foreground">
-                      {signal.requestType}
+                      {enhancedSignal.requestType}
                     </p>
                   </div>
-                  <StatusBadge status={signal.status} />
+                  <StatusBadge status={enhancedSignal.status} />
                 </div>
 
                 <Separator />
@@ -160,25 +207,25 @@ export function SignalDetailPage() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <p className="text-muted-foreground mb-1">Name</p>
-                    <p className="font-medium">{signal.name}</p>
+                    <p className="font-medium">{enhancedSignal.name}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground mb-1">Contact</p>
-                    <p className="font-medium">{signal.contact}</p>
+                    <p className="font-medium">{enhancedSignal.contact}</p>
                   </div>
-                  {signal.project && (
+                  {enhancedSignal.project && (
                     <div className="col-span-2">
                       <p className="text-muted-foreground mb-1">Project / Brand</p>
-                      <p className="font-medium">{signal.project}</p>
+                      <p className="font-medium">{enhancedSignal.project}</p>
                     </div>
                   )}
                   <div>
                     <p className="text-muted-foreground mb-1">Created</p>
-                    <p className="font-medium">{formatTimestamp(signal.createdAt)}</p>
+                    <p className="font-medium">{enhancedSignal.formattedCreatedAt}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground mb-1">Last Updated</p>
-                    <p className="font-medium">{formatTimestamp(signal.updatedAt)}</p>
+                    <p className="font-medium">{enhancedSignal.formattedUpdatedAt}</p>
                   </div>
                 </div>
 
@@ -187,7 +234,7 @@ export function SignalDetailPage() {
                 <div>
                   <p className="text-muted-foreground mb-2 text-sm">Message</p>
                   <div className="bg-secondary/30 rounded p-4">
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{signal.message}</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{enhancedSignal.message}</p>
                   </div>
                 </div>
               </div>
@@ -197,17 +244,17 @@ export function SignalDetailPage() {
               <h2 className="text-lg font-medium mb-4">Internal Notes</h2>
               
               <div className="space-y-4 mb-6">
-                {signal.notes.length === 0 ? (
+                {enhancedSignal.notes.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     No notes yet
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {signal.notes.map(note => (
+                    {enhancedSignal.notes.map(note => (
                       <div key={note.id} className="bg-secondary/30 rounded p-4">
                         <p className="text-sm mb-2">{note.content}</p>
                         <p className="text-xs text-muted-foreground">
-                          {formatTimestamp(note.timestamp)}
+                          {note.formattedTimestamp}
                         </p>
                       </div>
                     ))}
@@ -215,18 +262,7 @@ export function SignalDetailPage() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Textarea
-                  value={noteContent}
-                  onChange={(e) => setNoteContent(e.target.value)}
-                  placeholder="Add internal note..."
-                  rows={3}
-                />
-                <Button onClick={handleAddNote} className="w-full">
-                  <Note className="mr-2" />
-                  Add Note
-                </Button>
-              </div>
+              <NoteAction onAddNote={handleAddNote} />
             </GlassPanel>
           </div>
 
@@ -273,7 +309,7 @@ export function SignalDetailPage() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground/70 mt-1 ml-[72px]">
-                        {formatTimestamp(entry.timestamp)}
+                        {entry.formattedTimestamp}
                       </p>
                     </div>
                   ))}

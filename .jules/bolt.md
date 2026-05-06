@@ -22,6 +22,10 @@
 **Learning:** For single-item lookups (e.g., finding a specific ticket by ID), indexing the source array into a memoized `Map` within `useMemo` converts O(N) `.find()` operations into O(1) lookups. Additionally, transitioning from manual search state (`searchedSignal`) to derived state based on the search term and the Map ensures data consistency, as the UI automatically reflects updates to the underlying KV data without manual synchronization.
 **Action:** Use the Map Indexing Pattern for high-frequency or data-critical lookups to ensure both performance scalability and referential/data integrity.
 
+## 2026-05-06 - [Isolating High-Frequency State in Large Detail Views]
+**Learning:** In complex detail pages (like `SignalDetailPage.tsx`), high-frequency state updates (e.g., text input) can trigger expensive re-renders of the entire page, including O(N) array transformations (logs) and multiple `Intl.DateTimeFormat` calls. Extracting the input state into a memoized sub-component and pre-calculating formatted strings in `useMemo` prevents UI lag.
+**Action:** Always isolate text input state into its own component when the parent contains expensive derived state or large lists. Pre-calculate date strings in the same `useMemo` that processes the source data.
+
 ## 2026-05-07 - [Background Webhook Pattern]
 **Learning:** External notifications (Discord/Telegram) were blocking navigation to the success page. Removing `await` from these calls eliminates perceived latency, but standard fetch calls can be cancelled on unmount/navigation.
 **Action:** Implemented the Background Webhook Pattern by using `keepalive: true` in `fetch` and removing the `await` in `IntakePage`. This ensures reliable delivery while providing instantaneous navigation.
