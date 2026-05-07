@@ -25,3 +25,7 @@
 ## 2026-05-07 - [Background Webhook Pattern]
 **Learning:** External notifications (Discord/Telegram) were blocking navigation to the success page. Removing `await` from these calls eliminates perceived latency, but standard fetch calls can be cancelled on unmount/navigation.
 **Action:** Implemented the Background Webhook Pattern by using `keepalive: true` in `fetch` and removing the `await` in `IntakePage`. This ensures reliable delivery while providing instantaneous navigation.
+
+## 2026-05-14 - [Isolating High-Frequency Input State]
+**Learning:** High-frequency local state (like text inputs) in a large component triggers full-tree re-renders and expensive derived computations (like sorting logs or formatting dates) on every keystroke.
+**Action:** Extract high-frequency state into memoized sub-components. Pre-calculate all formatted strings (especially dates) within the `useMemo` blocks that derive state, ensuring the main render loop remains lightweight.

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback, memo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,13 +14,95 @@ import { longDateFormatter } from "@/lib/utils"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 
+/**
+ * ⚡ BOLT OPTIMIZATION: Component Isolation Pattern
+ * Extracting high-frequency state into a memoized sub-component prevents
+ * the entire Detail Page and its expensive system log derivation from
+ * re-rendering on every keystroke.
+ */
+const StatusAction = memo(function StatusAction({
+  onStatusChange
+}: {
+  onStatusChange: (status: SignalStatus) => void
+}) {
+  const [newStatus, setNewStatus] = useState<SignalStatus | "">("")
+
+  const handleSubmit = () => {
+    if (!newStatus) {
+      toast.error("Please select a status")
+      return
+    }
+    onStatusChange(newStatus)
+    setNewStatus("")
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-sm text-muted-foreground">Change Status</label>
+        <Select value={newStatus} onValueChange={(value) => setNewStatus(value as SignalStatus)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select new status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="SIGNAL_RECEIVED">Signal Received</SelectItem>
+            <SelectItem value="OPERATOR_ASSIGNED">Operator Assigned</SelectItem>
+            <SelectItem value="IN_REVIEW">In Review</SelectItem>
+            <SelectItem value="WAITING_ON_USER">Waiting On User</SelectItem>
+            <SelectItem value="RESOLUTION_COMPLETE">Resolution Complete</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button onClick={handleSubmit} className="w-full" variant="outline">
+          <FloppyDisk className="mr-2" />
+          Update Status
+        </Button>
+      </div>
+    </div>
+  )
+})
+
+/**
+ * ⚡ BOLT OPTIMIZATION: Component Isolation Pattern
+ * Extracting high-frequency state into a memoized sub-component prevents
+ * the entire Detail Page and its expensive system log derivation from
+ * re-rendering on every keystroke.
+ */
+const NoteAction = memo(function NoteAction({
+  onAddNote
+}: {
+  onAddNote: (content: string) => void
+}) {
+  const [noteContent, setNoteContent] = useState("")
+
+  const handleSubmit = () => {
+    if (!noteContent.trim()) {
+      toast.error("Note cannot be empty")
+      return
+    }
+    onAddNote(noteContent)
+    setNoteContent("")
+  }
+
+  return (
+    <div className="space-y-2">
+      <Textarea
+        value={noteContent}
+        onChange={(e) => setNoteContent(e.target.value)}
+        placeholder="Add internal note..."
+        rows={3}
+      />
+      <Button onClick={handleSubmit} className="w-full">
+        <Note className="mr-2" />
+        Add Note
+      </Button>
+    </div>
+  )
+})
+
 export function SignalDetailPage() {
   const { signalId } = useParams()
   const navigate = useNavigate()
   const [signals, setSignals] = useKV<Signal[]>("signals", [])
-  
-  const [noteContent, setNoteContent] = useState("")
-  const [newStatus, setNewStatus] = useState<SignalStatus | "">("")
 
   /**
    * ⚡ BOLT OPTIMIZATION: Map Indexing Pattern
@@ -51,15 +133,10 @@ export function SignalDetailPage() {
     )
   }
 
-  const handleAddNote = () => {
-    if (!noteContent.trim()) {
-      toast.error("Note cannot be empty")
-      return
-    }
-
+  const handleAddNote = useCallback((content: string) => {
     const newNote: InternalNote = {
       id: `note-${Date.now()}`,
-      content: noteContent,
+      content,
       timestamp: Date.now()
     }
 
@@ -71,16 +148,10 @@ export function SignalDetailPage() {
       ) ?? []
     )
 
-    setNoteContent("")
     toast.success("Note added")
-  }
+  }, [signalId, setSignals])
 
-  const handleStatusChange = () => {
-    if (!newStatus) {
-      toast.error("Please select a status")
-      return
-    }
-
+  const handleStatusChange = useCallback((status: SignalStatus) => {
     const now = Date.now()
 
     setSignals((current) =>
@@ -88,38 +159,55 @@ export function SignalDetailPage() {
         s.id === signalId
           ? {
               ...s,
-              status: newStatus,
+              status: status,
               updatedAt: now,
-              statusHistory: [...s.statusHistory, { status: newStatus, timestamp: now }]
+              statusHistory: [...s.statusHistory, { status, timestamp: now }]
             }
           : s
       ) ?? []
     )
 
-    setNewStatus("")
     toast.success("Status updated")
-  }
+  }, [signalId, setSignals])
 
-  const formatTimestamp = (timestamp: number) => {
-    return longDateFormatter.format(timestamp)
-  }
-
-  const systemLog = useMemo(() => {
+  /**
+   * ⚡ BOLT OPTIMIZATION: Render Loop Date Optimization
+   * Pre-calculate formatted date strings within the useMemo that generates
+   * the derived system log state. This prevents redundant and expensive
+   * Intl.DateTimeFormat calls during any parent component re-renders.
+   */
+  const { systemLog, formattedDetails } = useMemo(() => {
     const entries = [
-      { type: "SYSTEM", message: "Signal received", timestamp: signal.createdAt },
+      {
+        type: "SYSTEM",
+        message: "Signal received",
+        timestamp: signal.createdAt,
+        formattedTime: longDateFormatter.format(signal.createdAt)
+      },
       ...signal.statusHistory.map(h => ({
         type: "SYSTEM",
         message: `Status changed to ${h.status.replace(/_/g, " ")}`,
-        timestamp: h.timestamp
+        timestamp: h.timestamp,
+        formattedTime: longDateFormatter.format(h.timestamp)
       })),
       ...signal.notes.map(n => ({
         type: "OPERATOR",
         message: `Note added`,
-        timestamp: n.timestamp
+        timestamp: n.timestamp,
+        formattedTime: longDateFormatter.format(n.timestamp)
       }))
     ].sort((a, b) => a.timestamp - b.timestamp)
 
-    return entries
+    const details = {
+      createdAt: longDateFormatter.format(signal.createdAt),
+      updatedAt: longDateFormatter.format(signal.updatedAt),
+      notes: signal.notes.map(n => ({
+        ...n,
+        formattedTime: longDateFormatter.format(n.timestamp)
+      }))
+    }
+
+    return { systemLog: entries, formattedDetails: details }
   }, [signal])
 
   return (
@@ -174,11 +262,11 @@ export function SignalDetailPage() {
                   )}
                   <div>
                     <p className="text-muted-foreground mb-1">Created</p>
-                    <p className="font-medium">{formatTimestamp(signal.createdAt)}</p>
+                    <p className="font-medium">{formattedDetails.createdAt}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground mb-1">Last Updated</p>
-                    <p className="font-medium">{formatTimestamp(signal.updatedAt)}</p>
+                    <p className="font-medium">{formattedDetails.updatedAt}</p>
                   </div>
                 </div>
 
@@ -197,17 +285,17 @@ export function SignalDetailPage() {
               <h2 className="text-lg font-medium mb-4">Internal Notes</h2>
               
               <div className="space-y-4 mb-6">
-                {signal.notes.length === 0 ? (
+                {formattedDetails.notes.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     No notes yet
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {signal.notes.map(note => (
+                    {formattedDetails.notes.map(note => (
                       <div key={note.id} className="bg-secondary/30 rounded p-4">
                         <p className="text-sm mb-2">{note.content}</p>
                         <p className="text-xs text-muted-foreground">
-                          {formatTimestamp(note.timestamp)}
+                          {note.formattedTime}
                         </p>
                       </div>
                     ))}
@@ -215,46 +303,14 @@ export function SignalDetailPage() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Textarea
-                  value={noteContent}
-                  onChange={(e) => setNoteContent(e.target.value)}
-                  placeholder="Add internal note..."
-                  rows={3}
-                />
-                <Button onClick={handleAddNote} className="w-full">
-                  <Note className="mr-2" />
-                  Add Note
-                </Button>
-              </div>
+              <NoteAction onAddNote={handleAddNote} />
             </GlassPanel>
           </div>
 
           <div className="space-y-6">
             <GlassPanel>
               <h2 className="text-lg font-medium mb-4">Quick Actions</h2>
-              
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm text-muted-foreground">Change Status</label>
-                  <Select value={newStatus} onValueChange={(value) => setNewStatus(value as SignalStatus)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select new status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="SIGNAL_RECEIVED">Signal Received</SelectItem>
-                      <SelectItem value="OPERATOR_ASSIGNED">Operator Assigned</SelectItem>
-                      <SelectItem value="IN_REVIEW">In Review</SelectItem>
-                      <SelectItem value="WAITING_ON_USER">Waiting On User</SelectItem>
-                      <SelectItem value="RESOLUTION_COMPLETE">Resolution Complete</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={handleStatusChange} className="w-full" variant="outline">
-                    <FloppyDisk className="mr-2" />
-                    Update Status
-                  </Button>
-                </div>
-              </div>
+              <StatusAction onStatusChange={handleStatusChange} />
             </GlassPanel>
 
             <GlassPanel>
@@ -273,7 +329,7 @@ export function SignalDetailPage() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground/70 mt-1 ml-[72px]">
-                        {formatTimestamp(entry.timestamp)}
+                        {entry.formattedTime}
                       </p>
                     </div>
                   ))}
