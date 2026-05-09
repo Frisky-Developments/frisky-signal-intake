@@ -33,3 +33,7 @@
 ## 2026-05-08 - [Advanced Deferral Pattern in ConsolePage]
 **Learning:** Found that even with `useDeferredValue` for filtering, local state updates for search and settings inputs in `ConsolePage.tsx` were still triggering full-component re-renders (including O(N) indexing) on every keystroke.
 **Action:** Implemented the Advanced Deferral Pattern by isolating inputs into memoized sub-components (`SearchAction`, `SettingsDialogContent`). By applying `useDeferredValue` to the local child state and notifying the parent via `useEffect`, we ensure the expensive parent state only re-evaluates when the deferred value changes, achieving zero input lag.
+
+## 2026-05-21 - [Pagination and State Update Bailout]
+**Learning:** As the `useKV` signals collection grows, the Signal Queue table becomes a major bottleneck for DOM performance and virtual DOM diffing. Additionally, simple navigation from the queue to detail view was triggering redundant re-renders because `handleMarkAsViewed` was unconditionally updating state even for already-viewed signals.
+**Action:** Implemented client-side pagination (15 items/page) to cap DOM complexity. Optimized `handleMarkAsViewed` with a bailout condition (`if (!signal.isNew) return current`) to eliminate unnecessary re-renders during operator navigation.
