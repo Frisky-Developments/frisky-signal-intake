@@ -29,3 +29,7 @@
 ## 2026-05-14 - [Isolating High-Frequency Input State]
 **Learning:** High-frequency local state (like text inputs) in a large component triggers full-tree re-renders and expensive derived computations (like sorting logs or formatting dates) on every keystroke.
 **Action:** Extract high-frequency state into memoized sub-components. Pre-calculate all formatted strings (especially dates) within the `useMemo` blocks that derive state, ensuring the main render loop remains lightweight.
+
+## 2026-05-08 - [Advanced Deferral Pattern in ConsolePage]
+**Learning:** Found that even with `useDeferredValue` for filtering, local state updates for search and settings inputs in `ConsolePage.tsx` were still triggering full-component re-renders (including O(N) indexing) on every keystroke.
+**Action:** Implemented the Advanced Deferral Pattern by isolating inputs into memoized sub-components (`SearchAction`, `SettingsDialogContent`). By applying `useDeferredValue` to the local child state and notifying the parent via `useEffect`, we ensure the expensive parent state only re-evaluates when the deferred value changes, achieving zero input lag.
