@@ -139,6 +139,16 @@ import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
+
+const PAGE_SIZE = 15
 
 /**
  * Memoized row component to prevent redundant re-renders of the table row
@@ -231,6 +241,15 @@ export function ConsolePage() {
   const [deferredSearchTerm, setDeferredSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<SignalStatus | "ALL">("ALL")
   const [typeFilter, setTypeFilter] = useState<RequestType | "ALL">("ALL")
+  const [currentPage, setCurrentPage] = useState(1)
+
+  /**
+   * ⚡ BOLT OPTIMIZATION: Reset pagination on filter change to ensure
+   * the operator is always looking at the relevant results from the first page.
+   */
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [deferredSearchTerm, statusFilter, typeFilter])
 
   /**
    * Referential stability cache for indexed signals.
@@ -310,13 +329,32 @@ export function ConsolePage() {
   }, [indexedSignals, deferredSearchTerm, statusFilter, typeFilter])
 
   /**
+   * ⚡ BOLT OPTIMIZATION: Client-side Pagination Pattern
+   * Paginate filtered results to cap DOM complexity and virtual DOM diffing time.
+   * This ensures the console remains responsive even as the KV collection grows.
+   */
+  const { paginatedSignals, totalPages } = useMemo(() => {
+    const total = Math.ceil(filteredSignals.length / PAGE_SIZE)
+    const start = (currentPage - 1) * PAGE_SIZE
+    const paginated = filteredSignals.slice(start, start + PAGE_SIZE)
+    return { paginatedSignals: paginated, totalPages: total }
+  }, [filteredSignals, currentPage])
+
+  /**
    * Stabilized mark-as-viewed callback to prevent breaking memoization
    * in SignalTable and SignalRow.
+   *
+   * ⚡ BOLT OPTIMIZATION: State Update Bailout
+   * Only trigger a state update if the signal is actually new. This prevents
+   * redundant full-page re-renders when navigating to already-viewed signals.
    */
   const handleMarkAsViewed = useCallback((signalId: string) => {
-    setSignals((current) => 
-      current?.map(s => s.id === signalId ? { ...s, isNew: false } : s) ?? []
-    )
+    setSignals((current) => {
+      const signal = current?.find(s => s.id === signalId)
+      if (!signal || !signal.isNew) return current ?? []
+
+      return current.map(s => s.id === signalId ? { ...s, isNew: false } : s)
+    })
   }, [setSignals])
 
   /**
@@ -464,18 +502,61 @@ export function ConsolePage() {
             </div>
           </GlassPanel>
 
-          <GlassPanel className="overflow-hidden p-0">
-            {filteredSignals.length === 0 ? (
+          <GlassPanel className="overflow-hidden p-0 mb-6">
+            {paginatedSignals.length === 0 ? (
               <div className="p-12 text-center text-muted-foreground">
                 <p>No active signals</p>
               </div>
             ) : (
               <SignalTable
-                signals={filteredSignals}
+                signals={paginatedSignals}
                 onRowClick={handleRowClick}
               />
             )}
           </GlassPanel>
+
+          {totalPages > 1 && (
+            <Pagination className="mb-8">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (currentPage > 1) setCurrentPage(p => p - 1)
+                    }}
+                    className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+
+                {[...Array(totalPages)].map((_, i) => (
+                  <PaginationItem key={i + 1}>
+                    <PaginationLink
+                      href="#"
+                      isActive={currentPage === i + 1}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setCurrentPage(i + 1)
+                      }}
+                    >
+                      {i + 1}
+                    </PaginationLink>
+                  </PaginationItem>
+                ))}
+
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (currentPage < totalPages) setCurrentPage(p => p + 1)
+                    }}
+                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          )}
         </motion.div>
       </div>
     </div>

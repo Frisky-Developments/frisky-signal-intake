@@ -33,3 +33,7 @@
 ## 2026-05-08 - [Advanced Deferral Pattern in ConsolePage]
 **Learning:** Found that even with `useDeferredValue` for filtering, local state updates for search and settings inputs in `ConsolePage.tsx` were still triggering full-component re-renders (including O(N) indexing) on every keystroke.
 **Action:** Implemented the Advanced Deferral Pattern by isolating inputs into memoized sub-components (`SearchAction`, `SettingsDialogContent`). By applying `useDeferredValue` to the local child state and notifying the parent via `useEffect`, we ensure the expensive parent state only re-evaluates when the deferred value changes, achieving zero input lag.
+
+## 2026-05-15 - [State Update Bailout Pattern for useKV]
+**Learning:** Even with memoized components, triggering a state update in a parent component (like ConsolePage) that manages a large collection via `useKV` causes a full-component re-render and virtual DOM diffing. Many navigation-triggered updates (like marking a signal as viewed) are often redundant.
+**Action:** Implement a bailout check inside the state setter function (`if (!signal.isNew) return current`). This preserves the state reference and allows React to skip the entire render pass for the component tree when no actual change is required.
