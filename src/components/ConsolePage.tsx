@@ -139,6 +139,7 @@ import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 
 /**
  * Memoized row component to prevent redundant re-renders of the table row
@@ -220,6 +221,8 @@ const SignalTable = memo(function SignalTable({
   )
 })
 
+const PAGE_SIZE = 15
+
 export function ConsolePage() {
   const navigate = useNavigate()
   const [signals, setSignals] = useKV<Signal[]>("signals", [])
@@ -231,6 +234,13 @@ export function ConsolePage() {
   const [deferredSearchTerm, setDeferredSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<SignalStatus | "ALL">("ALL")
   const [typeFilter, setTypeFilter] = useState<RequestType | "ALL">("ALL")
+  const [currentPage, setCurrentPage] = useState(1)
+
+  // Reset to first page when filters change to avoid showing an empty page
+  // if the results are fewer than the current page index.
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [deferredSearchTerm, statusFilter, typeFilter])
 
   /**
    * Referential stability cache for indexed signals.
@@ -310,13 +320,31 @@ export function ConsolePage() {
   }, [indexedSignals, deferredSearchTerm, statusFilter, typeFilter])
 
   /**
-   * Stabilized mark-as-viewed callback to prevent breaking memoization
-   * in SignalTable and SignalRow.
+   * ⚡ BOLT OPTIMIZATION: Client-side Pagination
+   * Slicing the filtered array to improve rendering performance for large datasets.
+   */
+  const { paginatedSignals, totalPages } = useMemo(() => {
+    const total = Math.ceil(filteredSignals.length / PAGE_SIZE)
+    const start = (currentPage - 1) * PAGE_SIZE
+    const end = start + PAGE_SIZE
+    return {
+      paginatedSignals: filteredSignals.slice(start, end),
+      totalPages: total
+    }
+  }, [filteredSignals, currentPage])
+
+  /**
+   * ⚡ BOLT OPTIMIZATION: State Update Bailout
+   * Stabilized mark-as-viewed callback with a check to prevent redundant
+   * state updates if the signal is already not new.
    */
   const handleMarkAsViewed = useCallback((signalId: string) => {
-    setSignals((current) => 
-      current?.map(s => s.id === signalId ? { ...s, isNew: false } : s) ?? []
-    )
+    setSignals((current) => {
+      const signal = current?.find(s => s.id === signalId)
+      if (!signal || !signal.isNew) return current ?? []
+
+      return current?.map(s => s.id === signalId ? { ...s, isNew: false } : s) ?? []
+    })
   }, [setSignals])
 
   /**
@@ -465,15 +493,51 @@ export function ConsolePage() {
           </GlassPanel>
 
           <GlassPanel className="overflow-hidden p-0">
-            {filteredSignals.length === 0 ? (
+            {paginatedSignals.length === 0 ? (
               <div className="p-12 text-center text-muted-foreground">
                 <p>No active signals</p>
               </div>
             ) : (
-              <SignalTable
-                signals={filteredSignals}
-                onRowClick={handleRowClick}
-              />
+              <>
+                <SignalTable
+                  signals={paginatedSignals}
+                  onRowClick={handleRowClick}
+                />
+
+                {totalPages > 1 && (
+                  <div className="p-4 border-t border-border/50">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            className={cn("cursor-pointer", currentPage === 1 && "pointer-events-none opacity-50")}
+                          />
+                        </PaginationItem>
+
+                        {Array.from({ length: totalPages }).map((_, i) => (
+                          <PaginationItem key={i}>
+                            <PaginationLink
+                              isActive={currentPage === i + 1}
+                              onClick={() => setCurrentPage(i + 1)}
+                              className="cursor-pointer"
+                            >
+                              {i + 1}
+                            </PaginationLink>
+                          </PaginationItem>
+                        ))}
+
+                        <PaginationItem>
+                          <PaginationNext
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            className={cn("cursor-pointer", currentPage === totalPages && "pointer-events-none opacity-50")}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
+              </>
             )}
           </GlassPanel>
         </motion.div>
