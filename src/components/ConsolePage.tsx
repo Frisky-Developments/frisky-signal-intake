@@ -7,10 +7,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { GlassPanel } from "@/components/GlassPanel"
 import { SignalDeskHeader } from "@/components/SignalDeskHeader"
 import { StatusBadge } from "@/components/StatusBadge"
-import { MagnifyingGlass, Funnel, Export, Gear } from "@phosphor-icons/react"
+import { MagnifyingGlass, Funnel, Export, Gear, CaretLeft, CaretRight } from "@phosphor-icons/react"
 import { Signal, SignalStatus, RequestType } from "@/lib/types"
 import { useKV } from "@github/spark/hooks"
-import { shortDateFormatter, longDateFormatter } from "@/lib/utils"
+import { shortDateFormatter, longDateFormatter, cn } from "@/lib/utils"
+import { motion } from "framer-motion"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { toast } from "sonner"
 
 type IndexedSignal = Signal & {
   formattedDate: string;
@@ -134,12 +138,6 @@ const SettingsDialogContent = memo(function SettingsDialogContent({
   )
 })
 
-import { motion } from "framer-motion"
-import { cn } from "@/lib/utils"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { toast } from "sonner"
-
 /**
  * Memoized row component to prevent redundant re-renders of the table row
  * when unrelated parent state (like search input) changes.
@@ -220,6 +218,8 @@ const SignalTable = memo(function SignalTable({
   )
 })
 
+const PAGE_SIZE = 15
+
 export function ConsolePage() {
   const navigate = useNavigate()
   const [signals, setSignals] = useKV<Signal[]>("signals", [])
@@ -231,6 +231,7 @@ export function ConsolePage() {
   const [deferredSearchTerm, setDeferredSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<SignalStatus | "ALL">("ALL")
   const [typeFilter, setTypeFilter] = useState<RequestType | "ALL">("ALL")
+  const [currentPage, setCurrentPage] = useState(1)
 
   /**
    * Referential stability cache for indexed signals.
@@ -273,6 +274,13 @@ export function ConsolePage() {
     return results
   }, [signals])
 
+  /**
+   * ⚡ BOLT OPTIMIZATION: Reset pagination on filter change
+   */
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [deferredSearchTerm, statusFilter, typeFilter])
+
   // Single-pass filtering and counting logic to minimize array traversals.
   // Performs O(N) filtering and O(N) counting in a single loop.
   const { filteredSignals, activeSignalsCount } = useMemo(() => {
@@ -310,13 +318,30 @@ export function ConsolePage() {
   }, [indexedSignals, deferredSearchTerm, statusFilter, typeFilter])
 
   /**
+   * ⚡ BOLT OPTIMIZATION: Client-side Pagination
+   * Slicing the filtered array prevents rendering massive lists upfront.
+   */
+  const { paginatedSignals, totalPages } = useMemo(() => {
+    const total = Math.ceil(filteredSignals.length / PAGE_SIZE)
+    const start = (currentPage - 1) * PAGE_SIZE
+    const paginated = filteredSignals.slice(start, start + PAGE_SIZE)
+    return { paginatedSignals: paginated, totalPages: total }
+  }, [filteredSignals, currentPage])
+
+  /**
    * Stabilized mark-as-viewed callback to prevent breaking memoization
    * in SignalTable and SignalRow.
+   *
+   * ⚡ BOLT OPTIMIZATION: State Update Bailout
+   * Only trigger a state update if the signal exists and is actually new.
+   * This prevents redundant full-page re-renders during operator navigation.
    */
   const handleMarkAsViewed = useCallback((signalId: string) => {
-    setSignals((current) => 
-      current?.map(s => s.id === signalId ? { ...s, isNew: false } : s) ?? []
-    )
+    setSignals((current) => {
+      const signal = current?.find(s => s.id === signalId)
+      if (!signal || !signal.isNew) return current ?? []
+      return current?.map(s => s.id === signalId ? { ...s, isNew: false } : s) ?? []
+    })
   }, [setSignals])
 
   /**
@@ -465,15 +490,45 @@ export function ConsolePage() {
           </GlassPanel>
 
           <GlassPanel className="overflow-hidden p-0">
-            {filteredSignals.length === 0 ? (
+            {paginatedSignals.length === 0 ? (
               <div className="p-12 text-center text-muted-foreground">
                 <p>No active signals</p>
               </div>
             ) : (
-              <SignalTable
-                signals={filteredSignals}
-                onRowClick={handleRowClick}
-              />
+              <>
+                <SignalTable
+                  signals={paginatedSignals}
+                  onRowClick={handleRowClick}
+                />
+
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-6 py-4 border-t border-border/50">
+                    <p className="text-sm text-muted-foreground">
+                      Page {currentPage} of {totalPages}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage(prev => prev - 1)}
+                      >
+                        <CaretLeft size={16} />
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage(prev => prev + 1)}
+                      >
+                        Next
+                        <CaretRight size={16} />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </GlassPanel>
         </motion.div>
