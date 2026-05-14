@@ -1,16 +1,57 @@
 import { useState, useMemo, useCallback, useDeferredValue, memo, useRef, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
+import { motion } from "framer-motion"
+import {
+  MagnifyingGlass,
+  Funnel,
+  Export,
+  Gear
+} from "@phosphor-icons/react"
+import { toast } from "sonner"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from "@/components/ui/table"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+
 import { GlassPanel } from "@/components/GlassPanel"
 import { SignalDeskHeader } from "@/components/SignalDeskHeader"
 import { StatusBadge } from "@/components/StatusBadge"
-import { MagnifyingGlass, Funnel, Export, Gear } from "@phosphor-icons/react"
-import { Signal, SignalStatus, RequestType } from "@/lib/types"
+
 import { useKV } from "@github/spark/hooks"
-import { shortDateFormatter, longDateFormatter } from "@/lib/utils"
+import { Signal, SignalStatus, RequestType } from "@/lib/types"
+import { cn, shortDateFormatter, longDateFormatter } from "@/lib/utils"
 
 type IndexedSignal = Signal & {
   formattedDate: string;
@@ -134,12 +175,6 @@ const SettingsDialogContent = memo(function SettingsDialogContent({
   )
 })
 
-import { motion } from "framer-motion"
-import { cn } from "@/lib/utils"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { toast } from "sonner"
-
 /**
  * Memoized row component to prevent redundant re-renders of the table row
  * when unrelated parent state (like search input) changes.
@@ -220,6 +255,8 @@ const SignalTable = memo(function SignalTable({
   )
 })
 
+const PAGE_SIZE = 15
+
 export function ConsolePage() {
   const navigate = useNavigate()
   const [signals, setSignals] = useKV<Signal[]>("signals", [])
@@ -231,6 +268,7 @@ export function ConsolePage() {
   const [deferredSearchTerm, setDeferredSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<SignalStatus | "ALL">("ALL")
   const [typeFilter, setTypeFilter] = useState<RequestType | "ALL">("ALL")
+  const [currentPage, setCurrentPage] = useState(1)
 
   /**
    * Referential stability cache for indexed signals.
@@ -310,13 +348,38 @@ export function ConsolePage() {
   }, [indexedSignals, deferredSearchTerm, statusFilter, typeFilter])
 
   /**
-   * Stabilized mark-as-viewed callback to prevent breaking memoization
-   * in SignalTable and SignalRow.
+   * ⚡ BOLT OPTIMIZATION: Client-side Pagination
+   * Slicing the filtered signals array based on current page reduces the
+   * number of DOM nodes being rendered/diffed, improving performance.
+   */
+  const paginatedSignals = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return filteredSignals.slice(start, start + PAGE_SIZE)
+  }, [filteredSignals, currentPage])
+
+  const totalPages = Math.ceil(filteredSignals.length / PAGE_SIZE)
+
+  /**
+   * Automatically reset to page 1 when filters or search terms change
+   * to ensure consistent UI state and prevent empty pages.
+   */
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [deferredSearchTerm, statusFilter, typeFilter])
+
+  /**
+   * ⚡ BOLT OPTIMIZATION: State Update Bailout
+   * Only trigger a state update if the signal is actually new.
+   * This prevents redundant full-page re-renders and virtual DOM
+   * recalculations when navigating between already-viewed signals.
    */
   const handleMarkAsViewed = useCallback((signalId: string) => {
-    setSignals((current) => 
-      current?.map(s => s.id === signalId ? { ...s, isNew: false } : s) ?? []
-    )
+    setSignals((current) => {
+      const signal = current?.find(s => s.id === signalId)
+      if (!signal || !signal.isNew) return current ?? []
+
+      return current.map(s => s.id === signalId ? { ...s, isNew: false } : s)
+    })
   }, [setSignals])
 
   /**
@@ -470,10 +533,76 @@ export function ConsolePage() {
                 <p>No active signals</p>
               </div>
             ) : (
-              <SignalTable
-                signals={filteredSignals}
-                onRowClick={handleRowClick}
-              />
+              <>
+                <SignalTable
+                  signals={paginatedSignals}
+                  onRowClick={handleRowClick}
+                />
+
+                {totalPages > 1 && (
+                  <div className="p-4 border-t bg-secondary/10">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              setCurrentPage(prev => Math.max(1, prev - 1))
+                            }}
+                            className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                          />
+                        </PaginationItem>
+
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                          // Logic to show limited page numbers for better UI
+                          if (
+                            page === 1 ||
+                            page === totalPages ||
+                            (page >= currentPage - 1 && page <= currentPage + 1)
+                          ) {
+                            return (
+                              <PaginationItem key={page}>
+                                <PaginationLink
+                                  href="#"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    setCurrentPage(page)
+                                  }}
+                                  isActive={currentPage === page}
+                                >
+                                  {page}
+                                </PaginationLink>
+                              </PaginationItem>
+                            )
+                          }
+
+                          if (page === currentPage - 2 || page === currentPage + 2) {
+                            return (
+                              <PaginationItem key={page}>
+                                <PaginationEllipsis />
+                              </PaginationItem>
+                            )
+                          }
+
+                          return null
+                        })}
+
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              setCurrentPage(prev => Math.min(totalPages, prev + 1))
+                            }}
+                            className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
+              </>
             )}
           </GlassPanel>
         </motion.div>
