@@ -357,17 +357,40 @@ export function ConsolePage() {
    */
   const visiblePages = useMemo(() => {
     const pages: (number | "ellipsis")[] = []
-    for (let i = 1; i <= totalPages; i++) {
-      if (
-        i === 1 ||
-        i === totalPages ||
-        (i >= currentPage - 1 && i <= currentPage + 1)
-      ) {
-        pages.push(i)
-      } else if (i === currentPage - 2 || i === currentPage + 2) {
-        pages.push("ellipsis")
-      }
+
+    // Always include the first page
+    pages.push(1)
+
+    // Add ellipsis if current page is far from the beginning
+    if (currentPage > 3) {
+      pages.push("ellipsis")
     }
+
+    // Add previous page if it's not the first page
+    if (currentPage > 2) {
+      pages.push(currentPage - 1)
+    }
+
+    // Add current page if it's not the first or last page
+    if (currentPage > 1 && currentPage < totalPages) {
+      pages.push(currentPage)
+    }
+
+    // Add next page if it's not the last page
+    if (currentPage < totalPages - 1) {
+      pages.push(currentPage + 1)
+    }
+
+    // Add ellipsis if current page is far from the end
+    if (currentPage < totalPages - 2) {
+      pages.push("ellipsis")
+    }
+
+    // Always include the last page if it exists and is not the first
+    if (totalPages > 1) {
+      pages.push(totalPages)
+    }
+
     return pages
   }, [totalPages, currentPage])
 
@@ -387,10 +410,18 @@ export function ConsolePage() {
    */
   const handleMarkAsViewed = useCallback((signalId: string) => {
     setSignals((current) => {
-      const signal = current?.find(s => s.id === signalId)
-      if (!signal || !signal.isNew) return current ?? []
+      if (!current) return []
 
-      return current.map(s => s.id === signalId ? { ...s, isNew: false } : s)
+      let changed = false
+      const next = current.map(s => {
+        if (s.id === signalId && s.isNew) {
+          changed = true
+          return { ...s, isNew: false }
+        }
+        return s
+      })
+
+      return changed ? next : current
     })
   }, [setSignals])
 
