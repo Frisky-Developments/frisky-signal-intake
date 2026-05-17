@@ -33,3 +33,7 @@
 ## 2026-05-08 - [Advanced Deferral Pattern in ConsolePage]
 **Learning:** Found that even with `useDeferredValue` for filtering, local state updates for search and settings inputs in `ConsolePage.tsx` were still triggering full-component re-renders (including O(N) indexing) on every keystroke.
 **Action:** Implemented the Advanced Deferral Pattern by isolating inputs into memoized sub-components (`SearchAction`, `SettingsDialogContent`). By applying `useDeferredValue` to the local child state and notifying the parent via `useEffect`, we ensure the expensive parent state only re-evaluates when the deferred value changes, achieving zero input lag.
+
+## 2026-05-21 - [Pagination Pruning and Single-Pass State Updates]
+**Learning:** For large datasets, iterating over the entire range of pages in JSX or within a hook creates O(TotalPages) overhead. Additionally, common state update patterns often involve an O(N) lookup followed by an O(N) mapping, which can be consolidated.
+**Action:** Use the Pagination Pruning Pattern to directly calculate visible page boundaries. Implement Single-Pass Refactoring for state updates using a bailout flag to preserve referential stability and reduce complexity to O(N).

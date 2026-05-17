@@ -357,17 +357,28 @@ export function ConsolePage() {
    */
   const visiblePages = useMemo(() => {
     const pages: (number | "ellipsis")[] = []
-    for (let i = 1; i <= totalPages; i++) {
-      if (
-        i === 1 ||
-        i === totalPages ||
-        (i >= currentPage - 1 && i <= currentPage + 1)
-      ) {
-        pages.push(i)
-      } else if (i === currentPage - 2 || i === currentPage + 2) {
-        pages.push("ellipsis")
-      }
+    if (totalPages <= 0) return pages
+
+    // Always show first page
+    pages.push(1)
+
+    // Calculate middle range (O(1) relative to total pages)
+    const start = Math.max(2, currentPage - 1)
+    const end = Math.min(totalPages - 1, currentPage + 1)
+
+    if (start > 2) pages.push("ellipsis")
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i)
     }
+
+    if (end < totalPages - 1) pages.push("ellipsis")
+
+    // Always show last page if it's not the first page
+    if (totalPages > 1) {
+      pages.push(totalPages)
+    }
+
     return pages
   }, [totalPages, currentPage])
 
@@ -387,10 +398,18 @@ export function ConsolePage() {
    */
   const handleMarkAsViewed = useCallback((signalId: string) => {
     setSignals((current) => {
-      const signal = current?.find(s => s.id === signalId)
-      if (!signal || !signal.isNew) return current ?? []
+      if (!current) return []
 
-      return current.map(s => s.id === signalId ? { ...s, isNew: false } : s)
+      let changed = false
+      const next = current.map(s => {
+        if (s.id === signalId && s.isNew) {
+          changed = true
+          return { ...s, isNew: false }
+        }
+        return s
+      })
+
+      return changed ? next : current
     })
   }, [setSignals])
 
