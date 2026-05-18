@@ -355,42 +355,60 @@ export function ConsolePage() {
    * Converts O(TotalPages) render logic into O(1) by avoiding
    * iteration over the entire page range in JSX.
    */
+  /**
+   * ⚡ BOLT OPTIMIZATION: Pagination Pruning Pattern
+   * Directly calculates only the specific visible page numbers and ellipses.
+   * This reduces computation complexity from O(TotalPages) to O(1) relative
+   * to the total number of pages, ensuring UI responsiveness even with
+   * large datasets.
+   */
   const visiblePages = useMemo(() => {
     const pages: (number | "ellipsis")[] = []
-    for (let i = 1; i <= totalPages; i++) {
-      if (
-        i === 1 ||
-        i === totalPages ||
-        (i >= currentPage - 1 && i <= currentPage + 1)
-      ) {
-        pages.push(i)
-      } else if (i === currentPage - 2 || i === currentPage + 2) {
-        pages.push("ellipsis")
-      }
+    if (totalPages <= 0) return pages
+
+    pages.push(1)
+
+    if (currentPage > 3) {
+      pages.push("ellipsis")
     }
+
+    const start = Math.max(2, currentPage - 1)
+    const end = Math.min(totalPages - 1, currentPage + 1)
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i)
+    }
+
+    if (currentPage < totalPages - 2) {
+      pages.push("ellipsis")
+    }
+
+    if (totalPages > 1) {
+      pages.push(totalPages)
+    }
+
     return pages
   }, [totalPages, currentPage])
 
   /**
-   * Automatically reset to page 1 when filters or search terms change
-   * to ensure consistent UI state and prevent empty pages.
-   */
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [deferredSearchTerm, statusFilter, typeFilter])
-
-  /**
-   * ⚡ BOLT OPTIMIZATION: State Update Bailout
-   * Only trigger a state update if the signal is actually new.
-   * This prevents redundant full-page re-renders and virtual DOM
-   * recalculations when navigating between already-viewed signals.
+   * ⚡ BOLT OPTIMIZATION: Single-Pass State Update & Bailout Pattern
+   * Implements a single-pass update that combines lookup and modification.
+   * By returning the original state reference if no change is detected,
+   * it prevents redundant full-page re-renders and virtual DOM diffing.
+   * Reduces complexity from O(2N) to O(N).
    */
   const handleMarkAsViewed = useCallback((signalId: string) => {
     setSignals((current) => {
-      const signal = current?.find(s => s.id === signalId)
-      if (!signal || !signal.isNew) return current ?? []
-
-      return current.map(s => s.id === signalId ? { ...s, isNew: false } : s)
+      if (!current) return []
+      let changed = false
+      const next = current.map(s => {
+        if (s.id === signalId && s.isNew) {
+          changed = true
+          return { ...s, isNew: false }
+        }
+        return s
+      })
+      return changed ? next : current
     })
   }, [setSignals])
 
@@ -501,11 +519,17 @@ export function ConsolePage() {
           <GlassPanel className="mb-6" id="signal-queue">
             <div className="flex gap-4 flex-wrap">
               <div className="flex-1 min-w-[200px]">
-                <SearchAction onSearch={setDeferredSearchTerm} />
+                <SearchAction onSearch={(term) => {
+                  setDeferredSearchTerm(term)
+                  setCurrentPage(1)
+                }} />
               </div>
 
               <div className="flex gap-2">
-                <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as SignalStatus | "ALL")}>
+                <Select value={statusFilter} onValueChange={(value) => {
+                  setStatusFilter(value as SignalStatus | "ALL")
+                  setCurrentPage(1)
+                }}>
                   <SelectTrigger className="w-[180px]">
                     <Funnel className="mr-2" size={18} />
                     <SelectValue />
@@ -520,7 +544,10 @@ export function ConsolePage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as RequestType | "ALL")}>
+                <Select value={typeFilter} onValueChange={(value) => {
+                  setTypeFilter(value as RequestType | "ALL")
+                  setCurrentPage(1)
+                }}>
                   <SelectTrigger className="w-[200px]">
                     <SelectValue />
                   </SelectTrigger>
