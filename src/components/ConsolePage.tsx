@@ -267,6 +267,26 @@ export function ConsolePage() {
   const [currentPage, setCurrentPage] = useState(1)
 
   /**
+   * ⚡ BOLT OPTIMIZATION: Stabilized Event Handlers
+   * Memoizing these handlers prevents redundant re-renders and effect
+   * executions in child components like SearchAction and Select filters.
+   */
+  const handleSearch = useCallback((term: string) => {
+    setDeferredSearchTerm(term)
+    setCurrentPage(1)
+  }, [])
+
+  const handleStatusFilterChange = useCallback((value: string) => {
+    setStatusFilter(value as SignalStatus | "ALL")
+    setCurrentPage(1)
+  }, [])
+
+  const handleTypeFilterChange = useCallback((value: string) => {
+    setTypeFilter(value as RequestType | "ALL")
+    setCurrentPage(1)
+  }, [])
+
+  /**
    * Referential stability cache for indexed signals.
    * Maps signal ID to a tuple of [rawSignalReference, indexedSignalObject].
    */
@@ -515,19 +535,13 @@ export function ConsolePage() {
           <GlassPanel className="mb-6" id="signal-queue">
             <div className="flex gap-4 flex-wrap">
               <div className="flex-1 min-w-[200px]">
-                <SearchAction onSearch={(term) => {
-                  setDeferredSearchTerm(term)
-                  setCurrentPage(1)
-                }} />
+                <SearchAction onSearch={handleSearch} />
               </div>
 
               <div className="flex gap-2">
                 <Select
                   value={statusFilter}
-                  onValueChange={(value) => {
-                    setStatusFilter(value as SignalStatus | "ALL")
-                    setCurrentPage(1)
-                  }}
+                  onValueChange={handleStatusFilterChange}
                 >
                   <SelectTrigger className="w-[180px]">
                     <Funnel className="mr-2" size={18} />
@@ -545,10 +559,7 @@ export function ConsolePage() {
 
                 <Select
                   value={typeFilter}
-                  onValueChange={(value) => {
-                    setTypeFilter(value as RequestType | "ALL")
-                    setCurrentPage(1)
-                  }}
+                  onValueChange={handleTypeFilterChange}
                 >
                   <SelectTrigger className="w-[200px]">
                     <SelectValue />
