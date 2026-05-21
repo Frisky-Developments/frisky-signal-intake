@@ -140,34 +140,63 @@ export function SignalDetailPage() {
       timestamp: Date.now()
     }
 
-    setSignals((current) =>
-      current?.map(s =>
-        s.id === signalId
-          ? { ...s, notes: [...s.notes, newNote], updatedAt: Date.now() }
-          : s
-      ) ?? []
-    )
+    /**
+     * ⚡ BOLT OPTIMIZATION: State Update Bailout Pattern
+     * Prevents redundant full-page re-renders and KV storage writes by returning
+     * the original state reference if no modification occurred.
+     */
+    setSignals((current) => {
+      if (!current) return []
+      let changed = false
+      const next = current.map(s => {
+        if (s.id === signalId) {
+          changed = true
+          return { ...s, notes: [...s.notes, newNote], updatedAt: Date.now() }
+        }
+        return s
+      })
 
-    toast.success("Note added")
+      if (changed) {
+        // Defer side effect to avoid impurity in state updater
+        setTimeout(() => toast.success("Note added"), 0)
+        return next
+      }
+      return current
+    })
   }, [signalId, setSignals])
 
   const handleStatusChange = useCallback((status: SignalStatus) => {
     const now = Date.now()
 
-    setSignals((current) =>
-      current?.map(s =>
-        s.id === signalId
-          ? {
-              ...s,
-              status: status,
-              updatedAt: now,
-              statusHistory: [...s.statusHistory, { status, timestamp: now }]
-            }
-          : s
-      ) ?? []
-    )
+    /**
+     * ⚡ BOLT OPTIMIZATION: State Update Bailout Pattern
+     * Prevents redundant full-page re-renders and KV storage writes by returning
+     * the original state reference if no modification occurred (e.g. signal not found
+     * or status already matches the target).
+     */
+    setSignals((current) => {
+      if (!current) return []
+      let changed = false
+      const next = current.map(s => {
+        if (s.id === signalId && s.status !== status) {
+          changed = true
+          return {
+            ...s,
+            status: status,
+            updatedAt: now,
+            statusHistory: [...s.statusHistory, { status, timestamp: now }]
+          }
+        }
+        return s
+      })
 
-    toast.success("Status updated")
+      if (changed) {
+        // Defer side effect to avoid impurity in state updater
+        setTimeout(() => toast.success("Status updated"), 0)
+        return next
+      }
+      return current
+    })
   }, [signalId, setSignals])
 
   /**
