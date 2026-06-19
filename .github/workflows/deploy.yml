@@ -1,0 +1,16 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  deploy:
+    uses: Frisky-Developments/.github/.github/workflows/deploy-pages.yml@main
+    with:
+      build-command: npm run build
+      build-dir: dist
+      project-name: frisky-signal-intake
+    secrets: inherit
